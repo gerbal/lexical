@@ -4,7 +4,17 @@ defmodule Lexical.RemoteControl.Completion.Candidate do
 
   defmodule Function do
     @moduledoc false
-    defstruct [:argument_names, :arity, :name, :origin, :type, :visibility, :spec, :summary, :metadata]
+    defstruct [
+      :argument_names,
+      :arity,
+      :name,
+      :origin,
+      :type,
+      :visibility,
+      :spec,
+      :summary,
+      :metadata
+    ]
 
     def new(%{} = elixir_sense_map) do
       arg_names =
