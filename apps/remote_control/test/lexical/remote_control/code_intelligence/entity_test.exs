@@ -189,7 +189,7 @@ defmodule Lexical.RemoteControl.CodeIntelligence.EntityTest do
 
     test "fails for plain old atoms" do
       code = ~q[:not_a_module|]
-      assert {:error, {:unsupported, {:unquoted_atom, 'not_a_module'}}} = resolve(code)
+      assert {:error, {:unsupported, {:unquoted_atom, ~c"not_a_module"}}} = resolve(code)
     end
   end
 
