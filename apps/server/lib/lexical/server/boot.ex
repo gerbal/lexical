@@ -106,8 +106,10 @@ defmodule Lexical.Server.Boot do
     elixir_ok? = detected_elixir_range && Version.match?(versions.elixir, detected_elixir_range)
     erlang_ok? = detected_erlang_range && Version.match?(versions.erlang, detected_erlang_range)
 
+    skip_version_check? = System.get_env("LEXICAL_SKIP_VERSION_CHECK", nil) == "true"
+
     errors = [
-      unless elixir_ok? do
+      unless elixir_ok? or skip_version_check? do
         """
         FATAL: Lexical is not compatible with Elixir #{versions.elixir}
 
@@ -116,7 +118,7 @@ defmodule Lexical.Server.Boot do
         #{format_allowed_versions(@allowed_elixir)}
         """
       end,
-      unless erlang_ok? do
+      unless erlang_ok? or skip_version_check? do
         """
         FATAL: Lexical is not compatible with Erlang/OTP #{versions.erlang}
 

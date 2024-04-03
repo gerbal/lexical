@@ -1,0 +1,191 @@
+name: Elixir Upstream CI
+
+# Define workflow that runs when changes are pushed to the
+# `main` branch or pushed to a PR branch that targets the `main`
+# branch. Change the branch name if your project uses a
+# different name for the main branch like "master" or "production".
+on:
+  push:
+    branches: ["main", "releases/**", "feat/**", "fix/**"] # adapt branch for project
+  pull_request:
+    branches: ["main"] # adapt branch for project
+
+# Sets the ENV `MIX_ENV` to `test` for running tests
+env:
+  MIX_ENV: test
+  # Default elixir and otp are the ones that we validate
+  # against. Formatting and types can change from version to version,
+  # so keeping credo, dialyzer and formatting checks in the matrix
+  # would create an impossible situation, as different versions would have
+  # different rules
+  DEFAULT_ELIXIR: ref:main
+  DEFAULT_OTP: ref:maint
+
+permissions:
+  contents: read
+
+jobs:
+  static_analysis:
+    runs-on: ubuntu-latest
+    name: Static analysis
+    steps:
+      # Step: Setup Elixir + Erlang image as the base
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.DEFAULT_OTP }}
+          elixir-version: ${{ env.DEFAULT_ELIXIR }}
+          version-type: "strict"
+
+      # Step: Check out the code.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step: Define how to cache deps. Restores existing cache if present.
+      - name: Cache deps
+        id: cache-deps
+        uses: actions/cache@v3
+        with:
+          path: |
+            deps
+            _build
+
+          key: ${{ runner.os }}-mix-${{ env.DEFAULT_ELIXIR }}-${{ env.DEFAULT_OTP }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ env.DEFAULT_ELIXIR }}-${{ env.DEFAULT_OTP }}-
+
+      # Step: Download project dependencies. If unchanged, uses
+      # the cached version.
+      - name: Install and compile dependencies
+        run: |
+          mix deps.get
+          mix deps.compile --skip-umbrella-children
+
+      - name: Compile and don't let warnings through
+        run: mix compile --warnings-as-errors
+
+      # Step: Check that the checked in code has already been formatted.
+      # This step fails if something was found unformatted.
+      # Customize this step as desired.
+      - name: Check Formatting
+        run: mix format --check-formatted
+
+      # Step: Run credo static code analysis
+      - name: Credo static analysis
+        run: mix credo
+
+  dialyzer:
+    runs-on: ubuntu-latest
+    name: Run Dialyzer
+    env:
+      project_mix_lock: ${{ format('{0}{1}', github.workspace, '/mix.lock') }}
+      projects_ex_blob: ${{ format('{0}{1}', github.workspace, '/projects/**/*.ex') }}
+      projects_locks_blob: ${{ format('{0}{1}', github.workspace, '/projects/*/mix.lock') }}
+      MIX_ENV: dev
+    steps:
+      # Step: Setup Elixir + Erlang image as the base.
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.DEFAULT_OTP }}
+          elixir-version: ${{ env.DEFAULT_ELIXIR }}
+          version-type: "strict"
+
+      # Step: Check out the code.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set Variables
+        id: set_mix_lock_hash
+        run: |
+          mix_lock_hash="${{ hashFiles(env.project_mix_lock) }}"
+          projects_hash="${{ hashFiles(env.projects_ex_blob, env.projects_locks_blob) }}"
+          echo "mix_lock_hash=$mix_lock_hash::$projects_hash" >> "$GITHUB_OUTPUT"
+
+      # Step: Define how to cache deps. Restores existing cache if present.
+      - name: Cache deps
+        id: cache-deps
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-elixir-deps-1
+        with:
+          path: |
+            deps
+            _build
+
+          key: ${{ runner.os }}-mix-${{ env.DEFAULT_ELIXIR }}-${{ env.DEFAULT_OTP }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ env.DEFAULT_ELIXIR }}-${{ env.DEFAULT_OTP }}-
+
+      # Step: Create dialyzer .plt files if they're not present
+      - name: Cache dialyzer plt files
+        id: cache-plt
+        uses: actions/cache@v3
+        with:
+          path: "priv/plts"
+          key: lexical-plts-2-${{ env.DEFAULT_OTP }}-${{ env.DEFAULT_ELIXIR }}-${{ steps.set_mix_lock_hash.outputs.mix_lock_hash }}
+
+      # Step: Download project dependencies. If unchanged, uses
+      # the cached version.
+      - name: Install and compile dependencies
+        run: |
+          mix deps.get
+          mix deps.compile --skip-umbrella-children
+
+      - name: Compile
+        run: make compile.all
+
+      - name: Maybe create plt files
+        if: steps.cache-plt.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p priv/plts
+          make dialyzer.plt.all
+
+      - name: Run dialyzer
+        run: |
+          mix compile.protocols
+          make dialyzer.all
+
+  test:
+    runs-on: ubuntu-latest
+    name: Test on OTP ${{matrix.otp}} / Elixir ${{matrix.elixir}}
+    strategy:
+      # Specify the OTP and Elixir versions to use when building
+      # and running the workflow steps.
+      matrix:
+        include:
+          - elixir: "ref:main"
+            otp: "ref:maint"
+    steps:
+      # Step: Check out the code.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step: Setup Elixir + Erlang image as the base.
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+          elixir-version: ${{matrix.elixir}}
+
+      # Step: Define how to cache deps. Restores existing cache if present.
+      - name: Cache deps
+        id: cache-deps
+        uses: actions/cache@v3
+        with:
+          path: |
+            deps
+            _build
+
+          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-
+
+      # Step: Download project dependencies. If unchanged, uses
+      # the cached version.
+      - name: Install and compile the app
+        run: make compile.all
+
+      # Step: Execute the tests.
+      - name: Run tests
+        run: make test.all
