@@ -18,8 +18,8 @@ env:
   # so keeping credo, dialyzer and formatting checks in the matrix
   # would create an impossible situation, as different versions would have
   # different rules
-  DEFAULT_ELIXIR: ref:main
-  DEFAULT_OTP: ref:maint
+  DEFAULT_ELIXIR: main
+  DEFAULT_OTP: maint
 
 permissions:
   contents: read
@@ -152,8 +152,8 @@ jobs:
       # and running the workflow steps.
       matrix:
         include:
-          - elixir: "ref:main"
-            otp: "ref:maint"
+          - elixir: "main"
+            otp: "maint"
     steps:
       # Step: Check out the code.
       - name: Checkout code
